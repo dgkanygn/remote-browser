@@ -17,7 +17,7 @@ import {
   removeUserFromRoom,
   serializeRoomForClient,
 } from './roomManager';
-import { getNekoUrl } from './dockerManager';
+import { cleanupOrphanContainers, getNekoUrl } from './dockerManager';
 import {
   AssignControlPayload,
   CreateRoomPayload,
@@ -454,7 +454,8 @@ io.on('connection', (socket: Socket) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`[Server] Watch Party Backend http://localhost:${PORT} üzerinde çalışıyor.`);
+  await cleanupOrphanContainers();
 });
 

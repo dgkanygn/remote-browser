@@ -288,11 +288,15 @@ export function useNekoStream({
           let pc = pcRef.current;
           if (!pc || iceServers !== undefined) {
             cleanupPeer();
+            const fallbackIceServers: RTCIceServer[] = [
+              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+              { urls: ['stun:stun.cloudflare.com:3478'] },
+            ];
+            const finalIceServers =
+              iceServers && iceServers.length > 0 ? iceServers : fallbackIceServers;
+
             pc = new RTCPeerConnection({
-              iceServers:
-                iceServers && iceServers.length > 0
-                  ? iceServers
-                  : [{ urls: 'stun:stun.l.google.com:19302' }],
+              iceServers: finalIceServers,
             });
             pcRef.current = pc;
 
@@ -302,6 +306,10 @@ export function useNekoStream({
               if (ev.candidate) {
                 sendWs('signal/candidate', ev.candidate.toJSON());
               }
+            };
+
+            pc.onicecandidateerror = (ev) => {
+              console.warn('[Neko WebRTC] ICE aday hatası:', (ev as unknown as { errorText?: string }).errorText);
             };
 
             pc.ondatachannel = (ev) => {
@@ -347,10 +355,12 @@ export function useNekoStream({
             const currentPc = pc;
             currentPc.onconnectionstatechange = () => {
               if (isCancelled || pcRef.current !== currentPc) return;
+              console.log('[Neko WebRTC] ICE Bağlantı Durumu:', currentPc.connectionState);
               if (currentPc.connectionState === 'connected') {
                 setStatus('connected');
                 setError(null);
               } else if (currentPc.connectionState === 'failed') {
+                console.warn('[Neko WebRTC] Bağlantı failed durumuna geçti, signal/request ile yeniden deneniyor...');
                 sendWs('signal/request', { video: {}, audio: {} });
               }
             };

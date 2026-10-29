@@ -160,14 +160,16 @@ export async function startNekoContainer(params: {
       `NEKO_PASSWORD_ADMIN=${nekoPassword}`,
       `NEKO_EPR=${udpRange.start}-${udpRange.end}`,
       `NEKO_NAT1TO1=${HOST_IP}`,
-      `NEKO_ICELITE=1`,
+      `NEKO_ICELITE=0`,
       // Neko v3 ortam değişkenleri uyumluluğu
       `NEKO_CAPTURE_SCREEN=1280x720@30`,
       `NEKO_MEMBER_MULTIUSER_USER_PASSWORD=${nekoPassword}`,
       `NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD=${nekoPassword}`,
       `NEKO_WEBRTC_EPR=${udpRange.start}-${udpRange.end}`,
       `NEKO_WEBRTC_NAT1TO1=${HOST_IP}`,
-      `NEKO_WEBRTC_ICELITE=true`,
+      `NEKO_WEBRTC_ICELITE=false`,
+      `NEKO_WEBRTC_ICESERVERS_FRONTEND=[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]`,
+      `NEKO_WEBRTC_ICESERVERS_BACKEND=[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302"]}]`,
     ],
     HostConfig: {
       ShmSize: 2 * 1024 * 1024 * 1024, // 2GB /dev/shm (Firefox çökmesini önler)
@@ -176,19 +178,42 @@ export async function startNekoContainer(params: {
     },
   });
 
-  await container.start();
+  try {
+    await container.start();
 
-  const nekoUrl = `http://${HOST_IP}:${port}`;
-  await waitForNekoReady(nekoUrl);
+    const nekoUrl = `http://${HOST_IP}:${port}`;
+    await waitForNekoReady(nekoUrl);
 
-  console.log(
-    `[Docker] Oda ${params.roomId} için container başlatıldı (${container.id.slice(0, 12)}) -> ${nekoUrl} [UDP ${udpRange.start}-${udpRange.end}]`
-  );
+    console.log(
+      `[Docker] Oda ${params.roomId} için container başlatıldı (${container.id.slice(0, 12)}) -> ${nekoUrl} [UDP ${udpRange.start}-${udpRange.end}]`
+    );
 
-  return {
-    containerId: container.id,
-    nekoUrl,
-  };
+    return {
+      containerId: container.id,
+      nekoUrl,
+    };
+  } catch (err) {
+    await container.remove({ force: true }).catch(() => {});
+    throw err;
+  }
+}
+
+export async function cleanupOrphanContainers(): Promise<void> {
+  if (!isDockerAvailable()) return;
+  try {
+    const docker = getDocker();
+    const containers = await docker.listContainers({ all: true });
+    for (const c of containers) {
+      const isNekoRoom = c.Names.some((n) => n.includes('neko-room-'));
+      if (isNekoRoom) {
+        console.log(`[Docker] Başlangıçta artık container temizleniyor: ${c.Names.join(', ')}`);
+        const cont = docker.getContainer(c.Id);
+        await cont.remove({ force: true }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn('[Docker] Başlangıç container temizliği hatası:', err);
+  }
 }
 
 export async function stopAndRemoveContainer(
