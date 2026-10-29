@@ -288,12 +288,15 @@ export function useNekoStream({
           let pc = pcRef.current;
           if (!pc || iceServers !== undefined) {
             cleanupPeer();
-            const fallbackIceServers: RTCIceServer[] = [
-              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+            const defaultStunServers: RTCIceServer[] = [
               { urls: ['stun:stun.cloudflare.com:3478'] },
+              { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+              { urls: ['stun:stun.services.mozilla.com:3478'] },
             ];
-            const finalIceServers =
-              iceServers && iceServers.length > 0 ? iceServers : fallbackIceServers;
+            const finalIceServers: RTCIceServer[] = [
+              ...(iceServers && iceServers.length > 0 ? iceServers : []),
+              ...defaultStunServers,
+            ];
 
             pc = new RTCPeerConnection({
               iceServers: finalIceServers,
