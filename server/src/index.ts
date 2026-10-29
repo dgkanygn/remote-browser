@@ -30,6 +30,7 @@ import {
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 
@@ -49,6 +50,28 @@ app.post('/api/neko/session', async (req, res) => {
     const room = roomId ? getRoom(roomId) : undefined;
     const nekoBaseUrl = (room?.nekoUrl || getNekoUrl()).replace(/\/+$/, '');
     const wsBaseUrl = nekoBaseUrl.replace(/^http/, 'ws');
+
+    // Nginx / SSL ters proxy arkasındaysa istemcinin Mixed Content hatası almaması için
+    // WSS URL'sini Nginx'in /neko/<port> dinamik kuralına yönlendir:
+    const forwardedProto = req.headers['x-forwarded-proto'] as string | undefined;
+    const isHttps =
+      forwardedProto === 'https' ||
+      req.secure ||
+      process.env.PUBLIC_URL?.startsWith('https');
+
+    const forwardedHost =
+      (req.headers['x-forwarded-host'] as string | undefined) ||
+      req.headers.host ||
+      (process.env.PUBLIC_URL ? new URL(process.env.PUBLIC_URL).host : undefined);
+
+    const roomPort = room?.port || 8080;
+
+    let clientWsBaseUrl: string;
+    if (isHttps && forwardedHost) {
+      clientWsBaseUrl = `wss://${forwardedHost}/neko/${roomPort}`;
+    } else {
+      clientWsBaseUrl = wsBaseUrl;
+    }
 
     // Neko kullanıcı adını temizle ve benzersiz bir sonek ekle (aynı isimli kullanıcı çakışmasını önler)
     const baseName = (nickname || 'user')
@@ -85,7 +108,7 @@ app.post('/api/neko/session', async (req, res) => {
           mode: 'v2',
           token: '',
           nekoUrl: nekoBaseUrl,
-          wsUrl: `${wsBaseUrl}/ws?password=${encodeURIComponent(candidatePassword)}`,
+          wsUrl: `${clientWsBaseUrl}/ws?password=${encodeURIComponent(candidatePassword)}`,
         });
       }
 
@@ -101,7 +124,7 @@ app.post('/api/neko/session', async (req, res) => {
             token: data.token,
             sessionId: data.id,
             nekoUrl: nekoBaseUrl,
-            wsUrl: `${wsBaseUrl}/api/ws?token=${encodeURIComponent(data.token)}`,
+            wsUrl: `${clientWsBaseUrl}/api/ws?token=${encodeURIComponent(data.token)}`,
           });
         }
       }

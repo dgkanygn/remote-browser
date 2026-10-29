@@ -250,7 +250,33 @@ export function useNekoStream({
         modeRef.current = sessionData.mode || 'v3';
         let myNekoSessionId = sessionData.sessionId || '';
 
-        const ws = new WebSocket(sessionData.wsUrl);
+        // Mixed Content koruması: Sayfa HTTPS ise ve URL 'ws://' olarak geldiyse
+        // tarayıcı bağlantıyı engellemesin diye WSS ve Nginx proxy formatına uyarla
+        let finalWsUrl = sessionData.wsUrl;
+        if (
+          typeof window !== 'undefined' &&
+          window.location.protocol === 'https:' &&
+          finalWsUrl.startsWith('ws://')
+        ) {
+          try {
+            const rawUrl = new URL(finalWsUrl);
+            const serverUrl = new URL(getServerUrl());
+            if (serverUrl.protocol === 'https:') {
+              const port = rawUrl.port;
+              if (port && port !== '80' && port !== '443') {
+                finalWsUrl = `wss://${serverUrl.host}/neko/${port}${rawUrl.pathname}${rawUrl.search}`;
+              } else {
+                finalWsUrl = `wss://${serverUrl.host}${rawUrl.pathname}${rawUrl.search}`;
+              }
+            } else {
+              finalWsUrl = finalWsUrl.replace(/^ws:/, 'wss:');
+            }
+          } catch {
+            finalWsUrl = finalWsUrl.replace(/^ws:/, 'wss:');
+          }
+        }
+
+        const ws = new WebSocket(finalWsUrl);
         wsRef.current = ws;
 
         const handleOffer = async (
